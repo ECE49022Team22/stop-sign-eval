@@ -1,0 +1,14 @@
+# downloaded / generated test images (recreate with get_data.py + make_synthetic.py)
+data/
+# YOLO weights (auto-downloaded by ultralytics)
+*.pt
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# exported models
+*_ncnn_model/
+*.onnx
+# screenshots from compare_live.py
+compare_*.png

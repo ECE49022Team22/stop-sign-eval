@@ -1,0 +1,4 @@
+ultralytics>=8.4      # YOLO26n / YOLO11n (pulls in PyTorch, CPU is fine)
+opencv-python>=4.8    # with GUI support, needed for compare_live.py windows
+numpy
+matplotlib
