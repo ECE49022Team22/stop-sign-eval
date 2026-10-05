@@ -12,8 +12,9 @@ on your own photos or webcam. No Raspberry Pi needed; any laptop works (CPU only
 | `get_data.py` | Downloads 197 labelled street photos (97 with a stop sign, 100 without) |
 | `make_synthetic.py` | Builds 1,180 controlled test images: sign-size (distance) sweep, angle/dark/blur/occlusion, red look-alikes |
 | `evaluate.py` | Runs every detector on everything, writes numbers, charts and mistake galleries to `results/` |
-| `compare_live.py` | Rules (left) vs YOLO (right) live on your webcam, an image, a folder or a video |
+| `compare_live.py` | Rules (left) vs YOLO (right) live on your webcam, an image, a folder or a video (`--weights` for your own model) |
 | `results/` | Output from the run described in `REPORT.md` |
+| `train/` | Fine-tuning pipeline: a Kaggle notebook that trains in the cloud and compares before/after (see `train/README.md`) |
 
 ## Setup on Windows
 
@@ -40,6 +41,7 @@ python evaluate.py        :: ~4 min on a laptop CPU; writes results\
 
 `python evaluate.py --rescore` re-scores the saved predictions without re-running the models
 (useful after changing a threshold such as `YOLO_CONF` or the camera FOV at the top of the file).
+Add your own model to the comparison with `--weights path\to\model.pt="My model"`.
 
 ## Try it yourself
 

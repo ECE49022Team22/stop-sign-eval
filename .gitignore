@@ -12,3 +12,7 @@ venv/
 *.onnx
 # screenshots from compare_live.py
 compare_*.png
+# fine-tuning scratch / outputs
+work/
+finetune_results/
+*_results.zip
