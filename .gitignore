@@ -16,3 +16,5 @@ compare_*.png
 work/
 finetune_results/
 *_results.zip
+# demo images of third-party photos (no license) - keep out of the public repo
+demo_photos/
