@@ -2,6 +2,8 @@
 
 Usage:  python evaluate.py            (after get_data.py and make_synthetic.py)
         python evaluate.py --rescore  (re-score cached predictions without re-running models)
+        python evaluate.py --weights runs/best.pt="YOLO26n fine-tuned"   (add your own model(s);
+                                       with --rescore only the new model is run)
 
 Outputs (results/):
   predictions.json        every detection from every detector on every image
@@ -42,6 +44,21 @@ DETECTORS = {   # key: (display name, how to build it)
     "rules_a150": ("Rules, min area lowered to 150", lambda: (lambda im: rules_detect(im, min_area=150))),
 }
 SERIES_COLOR = {"yolo26n": "#2a78d6", "rules": "#eb6834", "yolo11n": "#1baf7a", "rules_a150": "#eda100"}
+FT_COLORS = ["#e87ba4", "#4a3aa7", "#008300"]      # fine-tuned models added with --weights
+BASE_KEYS = ["yolo26n", "yolo11n", "rules"]         # the three shown in every chart
+
+
+def add_weights(specs):
+    """Register extra YOLO models given as PATH or PATH=Display name."""
+    for i, spec in enumerate(specs or []):
+        path, _, name = spec.partition("=")
+        key = f"yolo_ft{i + 1}"
+        DETECTORS[key] = (name or os.path.basename(path), (lambda p=path: YoloDetector(p)))
+        SERIES_COLOR[key] = FT_COLORS[i % len(FT_COLORS)]
+
+
+def chart_keys():
+    return BASE_KEYS + [k for k in DETECTORS if k.startswith("yolo_ft")]
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 
 
@@ -56,9 +73,11 @@ def load_sets():
     return sets
 
 
-def run_all(sets):
+def run_all(sets, keys=None):
     preds, timing = {}, {}
     for key, (label, build) in DETECTORS.items():
+        if keys is not None and key not in keys:
+            continue
         det = build()
         preds[key], times = {}, []
         for set_name, labels in sets.items():
@@ -188,8 +207,8 @@ def style(ax):
 
 def chart_real(S, path):
     import matplotlib.pyplot as plt
-    keys = ["yolo26n", "yolo11n", "rules"]
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3.6), facecolor=SURFACE)
+    keys = chart_keys()
+    fig, axes = plt.subplots(1, 2, figsize=(10, 1.6 + 0.7 * len(keys)), facecolor=SURFACE)
     for ax, metric, title in ((axes[0], "detection_rate", "Stop signs found (97 photos)  ↑ better"),
                               (axes[1], "false_alarm_rate", "False alarms (100 photos, no sign)  ↓ better")):
         style(ax)
@@ -217,7 +236,7 @@ def chart_size(S, path):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 4.6), facecolor=SURFACE)
     style(ax)
-    keys = ["rules_a150", "rules", "yolo11n", "yolo26n"]     # drawn back to front
+    keys = ["rules_a150", "rules", "yolo11n", "yolo26n"] + chart_keys()[3:]     # drawn back to front
     for k in keys:
         xs = list(S[k]["size_sweep"])
         ys = [100 * S[k]["size_sweep"][x] for x in xs]
@@ -250,15 +269,15 @@ def chart_size(S, path):
 def chart_conditions(S, path):
     import matplotlib.pyplot as plt
     conds = ["frontal", "angled", "rotated", "dark", "overexposed", "motion_blur", "occluded"]
-    keys = ["yolo26n", "yolo11n", "rules"]
+    keys = chart_keys()
     fig, axes = plt.subplots(1, 2, figsize=(11, 3.9), facecolor=SURFACE, sharey=True)
     for ax, size in zip(axes, (40, 80)):
         style(ax)
         x = np.arange(len(conds))
-        w = 0.26
+        w = 0.8 / len(keys) - 0.02
         for i, k in enumerate(keys):
             v = [100 * S[k]["condition"][f"{c}@{size}"] for c in conds]
-            xs = x + (i - 1) * (w + 0.02)
+            xs = x + (i - (len(keys) - 1) / 2) * (w + 0.02)
             ax.bar(xs, v, width=w, color=SERIES_COLOR[k], label=DETECTORS[k][0] if size == 40 else None)
             for xi, vi in zip(xs, v):
                 if vi < 5:
@@ -269,7 +288,7 @@ def chart_conditions(S, path):
         ax.set_ylim(0, 105)
     axes[0].set_ylabel("Signs found (%)", color=INK2)
     fig.suptitle("Detection rate by condition (40 images per bar)", color=INK, fontsize=12, x=0.01, ha="left")
-    fig.legend(frameon=False, fontsize=9, loc="upper right", labelcolor=INK, ncol=3)
+    fig.legend(frameon=False, fontsize=9, loc="upper right", labelcolor=INK, ncol=min(3, len(keys)))
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
     plt.close(fig)
@@ -376,27 +395,51 @@ def write_summary_md(S, timing, path):
     L.append("")
     L.append("| Detector | threshold | found | false alarms |")
     L.append("|---|---|---|---|")
-    for k in ("yolo26n", "yolo11n"):
+    for k in [k for k in DETECTORS if k.startswith("yolo")]:
         for thr, v in S[k]["real_threshold_sweep"].items():
             L.append(f"| {DETECTORS[k][0]} | {thr} | {pct(v['detection_rate'])} | {pct(v['false_alarm_rate'])} |")
     L.append("")
-    L.append("*Median time per 640-px frame on the 2-vCPU cloud machine used for this test (PyTorch, CPU). "
+    L.append(f"*Median time per 640-px frame on the machine that ran this evaluation ({DEVICE}). "
              "Not a Raspberry Pi number.")
     open(path, "w", encoding="utf-8").write("\n".join(L) + "\n")
 
 
+def describe_device():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return f"GPU: {torch.cuda.get_device_name(0)}, PyTorch"
+    except Exception:
+        pass
+    import platform
+    return f"CPU: {os.cpu_count()} cores, {platform.machine()}, PyTorch"
+
+
+DEVICE = describe_device()
+
+
 def main():
+    global RES
     ap = argparse.ArgumentParser()
     ap.add_argument("--rescore", action="store_true", help="reuse results/predictions.json")
+    ap.add_argument("--weights", action="append", metavar='PATH[="Name"]',
+                    help="extra YOLO model to compare (repeatable), e.g. best.pt=\"YOLO26n fine-tuned\"")
+    ap.add_argument("--results", default=RES, help="output folder (default: results/)")
     args = ap.parse_args()
+    add_weights(args.weights)
+    RES = args.results
     os.makedirs(RES, exist_ok=True)
     sets = load_sets()
     cache = os.path.join(RES, "predictions.json")
+    preds, timing = {}, {}
     if args.rescore and os.path.exists(cache):
         c = json.load(open(cache))
         preds, timing = c["predictions"], c["timing_ms"]
-    else:
-        preds, timing = run_all(sets)
+    missing = [k for k in DETECTORS if k not in preds]
+    if missing:
+        p, t = run_all(sets, missing)
+        preds.update(p)
+        timing.update(t)
         json.dump({"predictions": preds, "timing_ms": timing}, open(cache, "w"))
     S = score(sets, preds)
     json.dump({"scores": S, "timing_ms": timing, "focal_px": FOCAL_PX}, open(os.path.join(RES, "summary.json"), "w"),
@@ -405,7 +448,7 @@ def main():
     chart_real(S, os.path.join(RES, "chart_real_photos.png"))
     chart_size(S, os.path.join(RES, "chart_distance.png"))
     chart_conditions(S, os.path.join(RES, "chart_conditions.png"))
-    for k in ("rules", "yolo26n"):
+    for k in ["rules", "yolo26n"] + chart_keys()[3:]:
         m, f = gallery(sets, preds, k, os.path.join(RES, f"gallery_mistakes_{k}.jpg"),
                        f"{DETECTORS[k][0]}: every mistake on the real photos")
         print(f"{k}: {m} missed, {f} false alarms on real photos")
