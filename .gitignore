@@ -9,6 +9,7 @@ __pycache__/
 venv/
 # exported models
 *_ncnn_model/
+*_hailo_model/
 *.onnx
 # screenshots from compare_live.py
 compare_*.png
